@@ -7,14 +7,14 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package certmanager_test
+package resources_test
 
 import (
 	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources/certmanager"
+	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources"
 )
 
 func TestCommonName(t *testing.T) {
@@ -28,9 +28,10 @@ func TestCommonName(t *testing.T) {
 		{"long name and suffix", "thisisverylongnamethatishittingthemaximal64characterlimitofnames", "suffix", "thisisverylongnamethatishittingthemaximal64characterlimit-suffix"},
 		{"long name and long suffix", "thisisverylongnamethatishittingthemaximal64characterlimitofnames", "thisisverylongsuffixthathas40chars123456", "thisisverylongnamethati-thisisverylongsuffixthathas40chars123456"},
 	}
-
+	cluster := pandaCluster()
 	for _, tt := range tests {
-		cn := certmanager.NewCommonName(tt.clusterName, tt.suffix)
-		assert.Equal(t, tt.expectedCommonName, string(cn), fmt.Sprintf("%s: expecting common name to be equal", tt.testName))
+		cluster.Name = tt.clusterName
+		cn := resources.CertNameWithSuffix(cluster, tt.suffix)
+		assert.Equal(t, tt.expectedCommonName, cn.Name, fmt.Sprintf("%s: expecting name to be equal", tt.testName))
 	}
 }
