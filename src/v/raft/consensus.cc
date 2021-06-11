@@ -917,6 +917,7 @@ ss::future<> consensus::start() {
                   _term = lstats.dirty_offset_term;
                   _voted_for = {};
               }
+              _flushed_offset = lstats.dirty_offset;
               /**
                * The configuration manager state may be divereged from the log
                * state, as log is flushed lazily, we have to make sure that the
@@ -1779,7 +1780,21 @@ append_entries_reply consensus::make_append_entries_reply(
 
 ss::future<> consensus::flush_log() {
     _probe.log_flushed();
-    return _log.flush().then([this] { _has_pending_flushes = false; });
+    auto flushed_up_to = _log.offsets().dirty_offset;
+    return _log.flush().then([this, flushed_up_to] {
+        _flushed_offset = flushed_up_to;
+        // TODO: remove this assertion when we will remove committed_offset
+        // from storage.
+        auto lstats = _log.offsets();
+        vassert(
+          lstats.committed_offset >= _flushed_offset,
+          "Raft incorrectly tracking flushed log offset. Expected offset: {}, "
+          " current log offsets: {}, log: {}",
+          _flushed_offset,
+          lstats,
+          _log);
+        _has_pending_flushes = false;
+    });
 }
 
 ss::future<storage::append_result> consensus::disk_append(
