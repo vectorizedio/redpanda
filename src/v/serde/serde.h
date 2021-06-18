@@ -132,6 +132,14 @@ void write(iobuf& out, T t) {
     } else if constexpr (std::is_scalar_v<Type> && !std::is_enum_v<Type>) {
         if constexpr (sizeof(Type) == 1) {
             out.append(reinterpret_cast<char const*>(&t), sizeof(t));
+        } else if constexpr (std::is_same_v<float, Type>) {
+            auto const le_t = htole32(t);
+            static_assert(sizeof(le_t) == sizeof(Type));
+            out.append(reinterpret_cast<char const*>(&le_t), sizeof(le_t));
+        } else if constexpr (std::is_same_v<double, Type>) {
+            auto const le_t = htole64(t);
+            static_assert(sizeof(le_t) == sizeof(Type));
+            out.append(reinterpret_cast<char const*>(&le_t), sizeof(le_t));
         } else {
             auto const le_t = ss::cpu_to_le(t);
             static_assert(sizeof(le_t) == sizeof(Type));
@@ -225,6 +233,10 @@ std::decay_t<T> read(iobuf_parser& in) {
 
         if constexpr (sizeof(Type) == 1) {
             t = in.consume_type<Type>();
+        } else if constexpr (std::is_same_v<float, Type>) {
+            t = le32toh(in.consume_type<Type>());
+        } else if constexpr (std::is_same_v<double, Type>) {
+            t = le64toh(in.consume_type<Type>());
         } else {
             t = ss::le_to_cpu(in.consume_type<Type>());
         }
