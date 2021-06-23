@@ -38,10 +38,9 @@ class Type:
     >>> str(Type(BasicType.STRUCT, Struct('my_struct')))
     'my_struct'
     """
-
     def __init__(self, basic_type: BasicType, template_type=None):
         self._basic_type = basic_type
-        self._template_type = template_type;
+        self._template_type = template_type
 
     def __str__(self):
         if self._basic_type == BasicType.INT_8:
@@ -61,7 +60,7 @@ class Type:
         elif self._basic_type == BasicType.STRING:
             return "ss::sstring"
         elif self._basic_type == BasicType.IOBUF:
-            return "iobuf";
+            return "iobuf"
         elif self._basic_type == BasicType.VECTOR:
             return "std::vector<{}>".format(self._template_type)
         elif self._basic_type == BasicType.OPTIONAL:
@@ -77,10 +76,9 @@ class Field:
     >>> str(Field("_str_vec", Type(basic_type = BasicType.VECTOR, template_type = Type(BasicType.STRING))))
     'std::vector<ss::sstring> _str_vec;'
     """
-
     def __init__(self, name: str, field_type: Type):
         self._name = name
-        self._type = field_type;
+        self._type = field_type
 
     def __str__(self):
         return "{} {};".format(self._type, self._name)
@@ -91,13 +89,13 @@ class Struct:
     >>> str(Struct(name = 'my_struct', fields = [Field('_f1', Type(BasicType.INT_32))]))
     'struct my_struct : serde::envelope<my_struct, serde::version<10>, serde::compat_version<5>> {\\n  std::int32_t _f1;\\n};'
     """
-
     def __init__(self, name: str, fields: List[Field] = []):
         self._name = name
         self._fields = fields
 
     def __str__(self):
-        return jinja2.Template("""struct {{ s._name }} : serde::envelope<{{ s._name }}, serde::version<10>, serde::compat_version<5>> {
+        return jinja2.Template(
+            """struct {{ s._name }} : serde::envelope<{{ s._name }}, serde::version<10>, serde::compat_version<5>> {
   bool operator==({{ s._name }} const&) const = default;
 {%- for s in s._fields %}
   {{ s }}
@@ -111,10 +109,11 @@ FILE_TEMPLATE = """#include "serde/envelope.h"
 {%- for s in structs %}
 {{ s }}
 {%- endfor %}
-
+ 
 """
 
-my_struct = Struct(name='my_struct', fields=[Field('_f1', Type(BasicType.INT_32))])
+my_struct = Struct(name='my_struct',
+                   fields=[Field('_f1', Type(BasicType.INT_32))])
 
 types = [
     Type(BasicType.INT_8),
@@ -135,7 +134,10 @@ types = [
 
 def gen_struct(i):
     ids = [randrange(len(types)) for i in range(3)]
-    fields = [Field(name="_f{}".format(i), field_type=types[type_id]) for i, type_id in enumerate(ids)]
+    fields = [
+        Field(name="_f{}".format(i), field_type=types[type_id])
+        for i, type_id in enumerate(ids)
+    ]
     return Struct(name="my_struct_{}".format(i), fields=fields)
 
 
@@ -152,7 +154,10 @@ def extend_type_list(struct_type: Type):
 def gen_structs():
     structs = [my_struct]
     for i in range(3):
-        previous = [gen_struct(i) for i in range(len(structs), len(structs) + 3)]
+        previous = [
+            gen_struct(i) for i in range(len(structs),
+                                         len(structs) + 3)
+        ]
         structs.extend(previous)
         for s in previous:
             extend_type_list(Type(BasicType.STRUCT, s))
