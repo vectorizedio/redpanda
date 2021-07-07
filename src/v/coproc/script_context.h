@@ -69,8 +69,6 @@ public:
     ss::future<> shutdown();
 
 private:
-    enum class write_response { success, crc_failure, term_too_old };
-
     ss::future<> do_execute();
 
     ss::future<>
@@ -78,9 +76,11 @@ private:
 
     ss::future<> process_reply(process_batch_reply);
     ss::future<> process_one_reply(process_batch_reply::data);
-    ss::future<write_response> write_materialized(
-      const model::materialized_ntp&, model::record_batch_reader);
-    ss::future<std::variant<write_response, model::term_id>>
+    ss::future<bool> write_materialized(
+      const model::materialized_ntp&,
+      model::term_id,
+      model::record_batch_reader);
+    ss::future<bool>
       write_checked(storage::log, model::term_id, model::record_batch_reader);
 
 private:
