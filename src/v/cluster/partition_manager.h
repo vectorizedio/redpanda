@@ -36,6 +36,9 @@ public:
     using manage_cb_t
       = ss::noncopyable_function<void(ss::lw_shared_ptr<partition>)>;
 
+    /// \brief Copies table with ntps matching a given topic namespace
+    ntp_table_container copy_table(const model::topic_namespace&);
+
     inline ss::lw_shared_ptr<partition> get(const model::ntp& ntp) const {
         if (auto it = _ntp_table.find(ntp); it != _ntp_table.end()) {
             return it->second;

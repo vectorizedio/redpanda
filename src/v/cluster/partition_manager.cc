@@ -35,6 +35,17 @@ partition_manager::partition_manager(
   , _raft_manager(raft)
   , _tx_gateway_frontend(tx_gateway_frontend) {}
 
+partition_manager::ntp_table_container
+partition_manager::copy_table(const model::topic_namespace& tn) {
+    ntp_table_container rs;
+    for (const auto& p : _ntp_table) {
+        if (p.second->ntp().ns == tn.ns && p.second->ntp().tp.topic == tn.tp) {
+            rs.emplace(p.first, p.second);
+        }
+    }
+    return rs;
+}
+
 ss::future<consensus_ptr> partition_manager::manage(
   storage::ntp_config ntp_cfg,
   raft::group_id group,
