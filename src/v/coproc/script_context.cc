@@ -175,7 +175,7 @@ ss::future<> script_context::process_one_reply(process_batch_reply::data e) {
         return ss::now();
     }
     auto ntp_ctx = found->second;
-    model::term_id highest_term = ntp_ctx->log.offsets().dirty_offset_term;
+    model::term_id highest_term = ntp_ctx->partition->term();
     return write_materialized(
              materialized_ntp, highest_term, std::move(*e.reader))
       .then([this, ntp_ctx](bool success) {
