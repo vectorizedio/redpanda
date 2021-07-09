@@ -68,7 +68,7 @@ class Type:
         elif self._basic_type == BasicType.STRUCT:
             return self._template_type._name
         else:
-            raise "unknown type"
+            raise Exception("unknown type")
 
 
 class Field:
@@ -89,13 +89,19 @@ class Struct:
     >>> str(Struct(name = 'my_struct', fields = [Field('_f1', Type(BasicType.INT_32))]))
     'struct my_struct : serde::envelope<my_struct, serde::version<10>, serde::compat_version<5>> {\\n  std::int32_t _f1;\\n};'
     """
-    def __init__(self, name: str, fields: List[Field] = []):
+    def __init__(self,
+                 name: str,
+                 version: int,
+                 compat_version: int,
+                 fields: List[Field] = []):
         self._name = name
+        self._version = version
+        self._compat_version = compat_version
         self._fields = fields
 
     def __str__(self):
         return jinja2.Template(
-            """struct {{ s._name }} : serde::envelope<{{ s._name }}, serde::version<10>, serde::compat_version<5>> {
+            """struct {{ s._name }} : serde::envelope<{{ s._name }}, serde::version<{{ s._version }}>, serde::compat_version<{{ s._compat_version }}>> {
   bool operator==({{ s._name }} const&) const = default;
 {%- for s in s._fields %}
   {{ s }}
@@ -106,14 +112,33 @@ class Struct:
 FILE_TEMPLATE = """#include "serde/envelope.h"
 #include "serde/serde.h"
 
+template<typename... T>
+struct type_list {};
+
+
+{%- for l in structs_lists %}
+{% set outer_loop = loop %}
+{%- for structs in l %}
+
 {%- for s in structs %}
 {{ s }}
+{%- endfor %}
+
+using types_{{ outer_loop.index * 10 + loop.index }} = type_list<
+{%- for s in structs %}
+  {{ s._name }}{{ ", " if not loop.last else "" }}
+{%- endfor %}
+>;
+
+{%- endfor %}
 {%- endfor %}
  
 """
 
 my_struct = Struct(name='my_struct',
-                   fields=[Field('_f1', Type(BasicType.INT_32))])
+                   fields=[Field('_f1', Type(BasicType.INT_32))],
+                   version=0,
+                   compat_version=0)
 
 types = [
     Type(BasicType.INT_8),
@@ -132,13 +157,44 @@ types = [
 ]
 
 
-def gen_struct(i):
+def extend_fields(fields: List[Field]):
+    extended = fields.copy()
+    ids = [randrange(len(types)) for i in range(len(fields), len(fields) + 3)]
+    base = len(fields)
+    extended.extend([
+        Field(name="_f{}".format(base + field_idx), field_type=types[type_id])
+        for field_idx, type_id in enumerate(ids)
+    ])
+    return extended
+
+
+struct_idx = 0
+
+
+def gen_struct(version: int, compat_version: int):
+    global struct_idx
     ids = [randrange(len(types)) for i in range(3)]
-    fields = [
-        Field(name="_f{}".format(i), field_type=types[type_id])
-        for i, type_id in enumerate(ids)
+    base_fields = [
+        Field(name="_f{}".format(field_idx), field_type=types[type_id])
+        for field_idx, type_id in enumerate(ids)
     ]
-    return Struct(name="my_struct_{}".format(i), fields=fields)
+    struct_idx += 1
+    extend_fields_1 = extend_fields(base_fields)
+    extend_fields_2 = extend_fields(extend_fields_1)
+    return [
+        Struct(name="my_struct_{}_v1".format(struct_idx),
+               fields=base_fields,
+               version=version,
+               compat_version=compat_version),
+        Struct(name="my_struct_{}_v2".format(struct_idx),
+               fields=extend_fields_1,
+               version=version + 1,
+               compat_version=compat_version),
+        Struct(name="my_struct_{}_v3".format(struct_idx),
+               fields=extend_fields_2,
+               version=version + 2,
+               compat_version=compat_version)
+    ]
 
 
 def extend_type_list(struct_type: Type):
@@ -151,16 +207,15 @@ def extend_type_list(struct_type: Type):
     ])
 
 
-def gen_structs():
-    structs = [my_struct]
+def gen_structs(version, compat_version):
+    structs = [[], [], []]
     for i in range(3):
-        previous = [
-            gen_struct(i) for i in range(len(structs),
-                                         len(structs) + 3)
-        ]
-        structs.extend(previous)
-        for s in previous:
-            extend_type_list(Type(BasicType.STRUCT, s))
+        for j in range(3):
+            previous = gen_struct(version, compat_version)
+            extend_type_list(Type(BasicType.STRUCT, previous[0]))
+            structs[0].append(previous[0])
+            structs[1].append(previous[1])
+            structs[2].append(previous[2])
     return structs
 
 
@@ -168,4 +223,8 @@ if __name__ == "__main__":
     assert len(sys.argv) == 2
     out_file = sys.argv[1]
     with open(out_file, "w") as f:
-        f.write(jinja2.Template(FILE_TEMPLATE).render(structs=gen_structs()))
+        f.write(
+            jinja2.Template(FILE_TEMPLATE).render(
+                structs_lists=[[[my_struct]],
+                               gen_structs(3, 3),
+                               gen_structs(4, 4)]))

@@ -85,9 +85,18 @@ inline constexpr auto const has_serde_async_write
 
 template<typename T>
 inline constexpr auto const is_serde_compatible_v
-  = is_envelope_v<T> || (std::is_scalar_v<T> && !std::is_enum_v<T>)
-    || reflection::is_std_vector_v<
-      T> || reflection::is_named_type_v<T> || reflection::is_ss_bool_v<T> || std::is_same_v<T, std::chrono::milliseconds> || std::is_same_v<T, iobuf> || std::is_same_v<T, ss::sstring> || reflection::is_std_optional_v<T>;
+  = is_envelope_v<T>
+    || (std::is_scalar_v<T>  //
+         && (!std::is_same_v<float, T> || std::numeric_limits<double>::is_iec559)
+         && (!std::is_same_v<double, T> || std::numeric_limits<double>::is_iec559)
+         && !std::is_enum_v<T>)
+    || reflection::is_std_vector_v<T>
+    || reflection::is_named_type_v<T>
+    || reflection::is_ss_bool_v<T>
+    || reflection::is_std_optional_v<T>
+    || std::is_same_v<T, std::chrono::milliseconds>
+    || std::is_same_v<T, iobuf>
+    || std::is_same_v<T, ss::sstring>;
 
 using header_t = std::tuple<version_t, version_t, size_t>;
 
@@ -153,8 +162,8 @@ void write(iobuf& out, T t) {
               t.size()));
         }
         write(out, static_cast<serde_size_t>(t.size()));
-        for (auto const& el : t) {
-            write(out, el);
+        for (auto& el : t) {
+            write(out, std::move(el));
         }
     } else if constexpr (reflection::is_named_type_v<Type>) {
         return write(out, static_cast<typename Type::type>(t));
@@ -171,7 +180,7 @@ void write(iobuf& out, T t) {
     } else if constexpr (reflection::is_std_optional_v<Type>) {
         if (t) {
             write(out, true);
-            write(out, t.value());
+            write(out, std::move(t.value()));
         } else {
             write(out, false);
         }
@@ -255,7 +264,9 @@ std::decay_t<T> read(iobuf_parser& in) {
     } else if constexpr (std::is_same_v<Type, iobuf>) {
         return in.share(read<serde_size_t>(in));
     } else if constexpr (std::is_same_v<Type, ss::sstring>) {
-        return in.read_string(read<serde_size_t>(in));
+        auto str = ss::uninitialized_string(read<serde_size_t>(in));
+        in.consume_to(str.size(), str.begin());
+        return str;
     } else if constexpr (reflection::is_std_optional_v<Type>) {
         return read<bool>(in) ? Type{read<typename Type::value_type>(in)}
                               : std::nullopt;

@@ -1,20 +1,40 @@
 #include "generated_structs.h"
 #include "reflection/type_traits.h"
 
+#if defined(MAIN)
 #include <fstream>
+#endif
 #include <iostream>
 
-bool operator==(iobuf const&, iobuf const&) { return true; }
-bool operator!=(iobuf const&, iobuf const&) { return true; }
-bool operator<=(iobuf const&, iobuf const&) { return true; }
-bool operator>=(iobuf const&, iobuf const&) { return true; }
-bool operator<(iobuf const&, iobuf const&) { return true; }
-bool operator>(iobuf const&, iobuf const&) { return true; }
+constexpr auto const max_depth = 3;
+
+template<typename... T1, typename... T2, std::size_t... I>
+bool eq(
+  std::tuple<T1...> const& a,
+  std::tuple<T2...> const& b,
+  std::index_sequence<I...>) {
+    return ((std::get<I>(a) == std::get<I>(b)) && ...);
+}
+
+template<
+  typename T1,
+  typename T2,
+  typename std::enable_if_t<
+    serde::is_envelope_v<T1> && serde::is_envelope_v<T2>,
+    void*> = nullptr>
+bool operator==(T1 const& a, T2 const& b) {
+    return eq(
+      envelope_to_tuple(a),
+      envelope_to_tuple(b),
+      std::make_index_sequence<std::min(
+        reflection::arity<T1>() - 1, reflection::arity<T2>() - 1)>());
+}
 
 struct data_gen {
     data_gen(std::uint8_t const* data, std::size_t const size)
       : _data{data}
       , _size{size} {}
+
     template<
       typename T,
       std::enable_if_t<std::is_trivially_copyable_v<T>>* = nullptr>
@@ -42,50 +62,58 @@ struct data_gen {
 };
 
 template<typename T>
-void init(T& t, data_gen& gen) {
+void init(T& t, data_gen& gen, int depth = 0) {
     if constexpr (serde::is_envelope_v<T>) {
-        serde::envelope_for_each_field(t, [&](auto& f) { init(f, gen); });
+        serde::envelope_for_each_field(
+          t, [&](auto& f) { init(f, gen, depth + 1); });
     } else if constexpr (reflection::is_std_optional_v<T>) {
-        if (gen.get<std::uint8_t>() > 128) {
+        if (
+          depth != max_depth
+          && gen.get<std::uint8_t>()
+               > std::numeric_limits<std::uint8_t>::max() / 2) {
             t = std::make_optional<typename std::decay_t<T>::value_type>();
-            init(*t, gen);
+            init(*t, gen, depth + 1);
         } else {
             t = std::nullopt;
         }
     } else if constexpr (reflection::is_std_vector_v<T>) {
-        t.resize(gen.get<uint8_t>());
-        for (auto& v : t) {
-            init(v, gen);
+        if (depth != max_depth) {
+            t.resize(gen.get<uint8_t>());
+            for (auto& v : t) {
+                init(v, gen, depth + 1);
+            }
         }
     } else if constexpr (std::is_same_v<ss::sstring, std::decay_t<T>>) {
         t.resize(gen.get<uint8_t>());
         for (auto& v : t) {
-            v = gen.get<char>();
+            v = (gen.get<char>() & std::numeric_limits<char>::max());
         }
     } else if constexpr (std::is_same_v<iobuf, std::decay_t<T>>) {
-        // TODO fill iobuf like string
+        auto s = ss::sstring{};
+        init(s, gen, depth + 1);
+        t.append(std::move(s).release());
     } else {
         t = gen.get<T>();
     }
 }
 
 template<typename... T, std::size_t... I>
-std::tuple<T...> init(data_gen& gen, std::index_sequence<I...>) {
+std::tuple<T...> init(data_gen gen, std::index_sequence<I...>) {
     auto structs = std::tuple<T...>{};
     (init(std::get<I>(structs), gen), ...);
     return structs;
 }
 
 template<typename T>
-void serialize(iobuf& iob, T const& t) {
-    iob = serde::to_iobuf(t);
+void serialize(iobuf& iob, T&& t) {
+    iob = serde::to_iobuf(std::forward<T>(t));
 }
 
 template<typename... T, std::size_t... I>
 std::array<iobuf, sizeof...(T)>
-serialize(std::tuple<T...> const& structs, std::index_sequence<I...>) {
+serialize(std::tuple<T...>&& structs, std::index_sequence<I...>) {
     auto target = std::array<iobuf, sizeof...(T)>{};
-    (serialize(target[I], std::get<I>(structs)), ...);
+    (serialize(target[I], std::move(std::get<I>(structs))), ...);
     return target;
 }
 
@@ -103,21 +131,25 @@ bool test(
 }
 
 template<typename... T>
-struct type_list {};
-
-template<typename... T>
-bool test_success(type_list<T...>, data_gen& gen) {
+bool test_success(type_list<T...>, data_gen gen) {
     constexpr auto const idx_seq = std::index_sequence_for<T...>();
-    auto const structs = init<T...>(gen, idx_seq);
-    return test<T...>(structs, serialize(structs, idx_seq), idx_seq);
+    return test(
+      init<T...>(gen, idx_seq),
+      serialize(init<T...>(gen, idx_seq), idx_seq),
+      idx_seq);
 }
 
 template<typename... T1, typename... T2>
-bool test_failure(type_list<T1...>, type_list<T2...>, data_gen& gen) {
+bool test_failure(type_list<T1...>, type_list<T2...>, data_gen gen) {
     constexpr auto const idx_seq = std::index_sequence_for<T1...>();
-    auto const structs = init<T1...>(gen, idx_seq);
-    return test<T2...>(structs, serialize(structs, idx_seq), idx_seq);
+    return test(
+      init<T1...>(gen, idx_seq),
+      serialize(init<T2...>(gen, idx_seq), idx_seq),
+      idx_seq);
 }
+
+template<typename... T1, typename... T2>
+bool test_version_upgrade(type_list<T1...>, type_list<T2...>, data_gen gen) {}
 
 #if defined(MAIN)
 int main(int argc, char** argv) {
@@ -126,7 +158,9 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    auto in = std::ifstream{argv[1], std::ios_base::binary};
+    auto in = std::ifstream{};
+    in.exceptions(std::ios::failbit | std::ios::badbit);
+    in.open(argv[1], std::ios_base::binary);
     auto str = std::string{};
 
     in.seekg(0, std::ios::end);
@@ -135,24 +169,23 @@ int main(int argc, char** argv) {
 
     str.assign(
       (std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    auto const data = reinterpret_cast<std::uint8_t const*>(str.data());
+    auto const size = str.size();
 
     try {
-        using types = type_list<
-          my_struct,
-          my_struct_1,
-          my_struct_2,
-          my_struct_3,
-          my_struct_4,
-          my_struct_5,
-          my_struct_6,
-          my_struct_7,
-          my_struct_8,
-          my_struct_9>;
-        auto generator = data_gen{
-          reinterpret_cast<std::uint8_t const*>(str.data()), str.size()};
-        test_success(types{}, generator);
-        test_failure(types{}, types{}, generator);
+        test_success(types_2{}, {data, size});
     } catch (...) {
+        __builtin_trap();
+    }
+
+    auto failed = false;
+    try {
+        test_failure(types_2{}, types_3{}, {data, size});
+    } catch (...) {
+        failed = true;
+    }
+    if (!failed) {
+        __builtin_trap();
     }
 };
 #else
@@ -160,23 +193,24 @@ extern "C" int LLVMFuzzerTestOneInput(uint8_t const* data, size_t size) {
     if (size == 0) {
         return 0;
     }
+
     try {
-        using types = type_list<
-          my_struct,
-          my_struct_1,
-          my_struct_2,
-          my_struct_3,
-          my_struct_4,
-          my_struct_5,
-          my_struct_6,
-          my_struct_7,
-          my_struct_8,
-          my_struct_9>;
-        auto generator = data_gen{data, size};
-        test_success(types{}, generator);
-        test_failure(types{}, types{}, generator);
+        test_success(types_21{}, {data, size});
+        test_success(types_31{}, {data, size});
     } catch (...) {
+        __builtin_trap();
     }
+
+    auto failed = false;
+    try {
+        test_failure(types_21{}, types_31{}, {data, size});
+    } catch (...) {
+        failed = true;
+    }
+    if (!failed) {
+        __builtin_trap();
+    }
+
     return 0;
 }
 #endif
