@@ -622,6 +622,19 @@ rpk:
   # Default: ''
   coredump_dir: "/var/lib/redpanda/coredump"
 
+  # Creates a "ballast" file that can be removed in the odd case that a redpanda node
+  # runs out of space, so that the node can be restarted and troubleshot.
+  # Default: false
+  tune_ballast_file: false
+
+  # The path where the ballast file will be created.
+  # Default: "/var/lib/redpanda/data/ballast.txt"
+  ballast_file_path: "/var/lib/redpanda/data/ballast.txt"
+
+  # The ballast file size.
+  # Default: "1GiB"
+  ballast_file_size: "1GiB"
+
   # (Optional) The vendor, VM type and storage device type that redpanda will run on, in
   # the format <vendor>:<vm>:<storage>. This hints to rpk which configuration values it
   # should use for the redpanda IO scheduler.
