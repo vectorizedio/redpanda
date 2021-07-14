@@ -40,6 +40,13 @@ func fillRpkConfig(path, mode string) *config.Config {
 		TuneSwappiness:     val,
 		CoredumpDir:        path,
 		Overprovisioned:    !val,
+		TuneBallastFile:    val,
+		BallastFilePath:    config.DefaultBallastFilePath,
+		BallastFileSize:    config.DefaultBallastFileSize,
+	}
+	if val {
+		conf.Rpk.BallastFilePath = config.DefaultBallastFilePath
+		conf.Rpk.BallastFileSize = config.DefaultBallastFileSize
 	}
 	return conf
 }

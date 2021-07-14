@@ -36,21 +36,31 @@ func NewBallastFileTuner(
 }
 
 func (t *ballastTuner) Tune() tuners.TuneResult {
-	abspath, err := filepath.Abs(t.conf.Rpk.BallastFilePath)
+	path := config.DefaultBallastFilePath
+	if t.conf.Rpk.BallastFilePath != "" {
+		path = t.conf.Rpk.BallastFilePath
+	}
+	abspath, err := filepath.Abs(path)
 	if err != nil {
 		return tuners.NewTuneError(fmt.Errorf(
 			"couldn't resolve the absolute file path for %s: %w",
-			abspath,
+			path,
 			err,
 		))
 	}
-	sizeBytes, err := units.FromHumanSize(t.conf.Rpk.BallastFileSize)
+
+	size := config.DefaultBallastFileSize
+	if t.conf.Rpk.BallastFileSize != "" {
+		size = t.conf.Rpk.BallastFileSize
+	}
+	sizeBytes, err := units.FromHumanSize(size)
 	if err != nil {
 		return tuners.NewTuneError(fmt.Errorf(
 			"'%s' is not a valid size unit.",
-			t.conf.Rpk.BallastFileSize,
+			size,
 		))
 	}
+
 	cmd := commands.NewWriteSizedFileCmd(abspath, sizeBytes)
 	err = cmd.Execute()
 	if err != nil {
