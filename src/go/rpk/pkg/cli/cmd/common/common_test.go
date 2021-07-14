@@ -187,6 +187,57 @@ func TestDeduceBrokers(t *testing.T) {
 	}
 }
 
+func TestDeduceAdminApiAddrs(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   func() (*config.Config, error)
+		addrs    []string
+		before   func()
+		cleanup  func()
+		expected []string
+	}{{
+		name: "it should prioritize the flag over the config & containers",
+		config: func() (*config.Config, error) {
+			conf := config.Default()
+			conf.Redpanda.AdminApi = []config.NamedSocketAddress{{
+				SocketAddress: config.SocketAddress{"192.168.76.54", 33146},
+			}}
+			return conf, nil
+		},
+		before: func() {
+			os.Setenv("REDPANDA_BROKERS", "192.168.34.12:33145,123.4.5.78:33145")
+		},
+		cleanup: func() {
+			os.Unsetenv("REDPANDA_BROKERS")
+		},
+		addrs:    []string{"192.168.34.12:33145"},
+		expected: []string{"192.168.34.12:33145"},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(st *testing.T) {
+			if tt.before != nil {
+				tt.before()
+			}
+			if tt.cleanup != nil {
+				defer tt.cleanup()
+			}
+			config := func() (*config.Config, error) {
+				return config.Default(), nil
+			}
+			addrs := &[]string{}
+
+			if tt.config != nil {
+				config = tt.config
+			}
+			if tt.addrs != nil {
+				addrs = &tt.addrs
+			}
+			bs := DeduceAdminApiAddrs(config, addrs)
+			require.Exactly(st, tt.expected, bs)
+		})
+	}
+}
 func TestAddKafkaFlags(t *testing.T) {
 	var (
 		brokers        []string
