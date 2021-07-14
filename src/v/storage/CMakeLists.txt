@@ -24,7 +24,7 @@ v_cc_library(
     types.cc
     spill_key_index.cc
     compacted_index_chunk_reader.cc
-    snapshot.cc
+    multi_snapshot.cc
     kvstore.cc
     segment_utils.cc
     compaction_reducers.cc
