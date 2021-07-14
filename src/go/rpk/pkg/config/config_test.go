@@ -1901,6 +1901,11 @@ func TestSetMode(t *testing.T) {
 			TuneSwappiness:     val,
 			CoredumpDir:        conf.Rpk.CoredumpDir,
 			Overprovisioned:    !val,
+			TuneBallastFile:    val,
+		}
+		if val {
+			conf.Rpk.BallastFilePath = DefaultBallastFilePath
+			conf.Rpk.BallastFileSize = DefaultBallastFileSize
 		}
 		return conf
 	}
