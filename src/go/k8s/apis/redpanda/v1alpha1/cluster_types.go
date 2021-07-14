@@ -128,11 +128,29 @@ type StorageSpec struct {
 type ExternalConnectivityConfig struct {
 	// Enabled enables the external connectivity feature
 	Enabled bool `json:"enabled,omitempty"`
+	// Hostname would assign the same hostname for all brokers.
+	// Combined with OrdinalNodePorts it would generate	advertised
+	// listeners as HOSTNAME.DOMAIN_NAME:30001, HOSTNAME.DOMAIN_NAME:30002 etc.
+	// If omitted an increasing	number per broker would be generated e.g.
+	// 0.DOMAIN_NAME:30000, 1.DOMAIN_NAME:30000 etc.
+	Hostname string `json:"hostname,omitempty"`
+	// BaseNodePort is the bootstrap port as defined by the user.
+	// If omitted a random port would be chosen by Kubernetes.
+	BaseNodePort int `json:"baseNodePort,omitempty"`
+	// OrdinalNodePorts enables generating an increasing dedicated
+	// NodePort per broker, e.g. each of those NodePorts would have
+	// a selector that points to a single broker.
+	// Each broker would use that NodePort as it's advertized port.
+	OrdinalNodePorts bool `json:"ordinalNodePorts,omitempty"`
 	// Subdomain can be used to change the behavior of an advertised
 	// KafkaAPI. Each broker advertises Kafka API as follows
 	// BROKER_ID.SUBDOMAIN:EXTERNAL_KAFKA_API_PORT.
 	// If Subdomain is empty then each broker advertises Kafka
 	// API as PUBLIC_NODE_IP:EXTERNAL_KAFKA_API_PORT.
+	// If Hostname is defined then each broker advertises
+	// Kafka API as HOSTNAME:EXTERNAL_KAFKA_API_PORT.
+	// If OrdinalNodePorts is enabled then each broker advertises
+	// Kafka API as HOSTNAME:(EXTERNAL_KAFKA_API_PORT + brokerID).
 	// If TLS is enabled then this subdomain will be requested
 	// as a subject alternative name.
 	Subdomain string `json:"subdomain,omitempty"`

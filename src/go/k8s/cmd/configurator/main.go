@@ -41,21 +41,29 @@ const (
 	externalConnectivitySubDomainEnvVar = "EXTERNAL_CONNECTIVITY_SUBDOMAIN"
 	hostPortEnvVar                      = "HOST_PORT"
 	proxyHostPortEnvVar                 = "PROXY_HOST_PORT"
+	advertisedHostnameEnvVar            = "ADVERTISED_HOSTNAME"
+	ordinalNodePortsEnvVar              = "ORDINAL_NODE_PORTS"
+	advertisedProxyHostnameEnvVar       = "ADVERTISED_PROXY_HOSTNAME"
+	proxyOrdinalNodePortsEnvVar         = "PROXY_ORDINAL_NODE_PORTS"
 )
 
 type brokerID int
 
 type configuratorConfig struct {
-	hostName             string
-	svcFQDN              string
-	configSourceDir      string
-	configDestination    string
-	nodeName             string
-	subdomain            string
-	externalConnectivity bool
-	redpandaRPCPort      int
-	hostPort             int
-	proxyHostPort        int
+	hostName                string
+	svcFQDN                 string
+	configSourceDir         string
+	configDestination       string
+	nodeName                string
+	subdomain               string
+	externalConnectivity    bool
+	redpandaRPCPort         int
+	hostPort                int
+	proxyHostPort           int
+	advertisedHostname      string
+	ordinalNodePorts        bool
+	advertisedProxyHostname string
+	proxyOrdinalNodePorts   bool
 }
 
 func (c *configuratorConfig) String() string {
@@ -69,7 +77,11 @@ func (c *configuratorConfig) String() string {
 		"externalConnectivitySubdomain: %s\n"+
 		"redpandaRPCPort: %d\n"+
 		"hostPort: %d\n"+
-		"proxyHostPort: %d\n",
+		"proxyHostPort: %d\n"+
+		"advertisedHostname: %s\n"+
+		"ordinalNodePorts: %t\n"+
+		"advertisedProxyHostname: %s\n"+
+		"proxyOrdinalNodePorts: %t\n",
 		c.hostName,
 		c.svcFQDN,
 		c.configSourceDir,
@@ -79,7 +91,12 @@ func (c *configuratorConfig) String() string {
 		c.subdomain,
 		c.redpandaRPCPort,
 		c.hostPort,
-		c.proxyHostPort)
+		c.proxyHostPort,
+		c.advertisedHostname,
+		c.ordinalNodePorts,
+		c.advertisedProxyHostname,
+		c.proxyOrdinalNodePorts,
+	)
 }
 
 var errorMissingEnvironmentVariable = errors.New("missing environment variable")
@@ -203,10 +220,18 @@ func registerAdvertisedKafkaAPI(
 	}
 
 	if len(c.subdomain) > 0 {
+		address := fmt.Sprintf("%d.%s", index, c.subdomain)
+		if c.advertisedHostname != "" {
+			address = fmt.Sprintf("%s.%s", c.advertisedHostname, c.subdomain)
+		}
+		port := c.hostPort
+		if c.ordinalNodePorts {
+			port += int(index) + 1
+		}
 		cfg.Redpanda.AdvertisedKafkaApi = append(cfg.Redpanda.AdvertisedKafkaApi, config.NamedSocketAddress{
 			SocketAddress: config.SocketAddress{
-				Address: fmt.Sprintf("%d.%s", index, c.subdomain),
-				Port:    c.hostPort,
+				Address: address,
+				Port:    port,
 			},
 			Name: "kafka-external",
 		})
@@ -248,10 +273,18 @@ func registerAdvertisedPandaproxyAPI(
 
 	// Pandaproxy uses the Kafka API subdomain.
 	if len(c.subdomain) > 0 {
+		address := fmt.Sprintf("%d.%s", index, c.subdomain)
+		if c.advertisedProxyHostname != "" {
+			address = fmt.Sprintf("%s.%s", c.advertisedProxyHostname, c.subdomain)
+		}
+		port := c.proxyHostPort
+		if c.proxyOrdinalNodePorts {
+			port += int(index) + 1
+		}
 		cfg.Pandaproxy.AdvertisedPandaproxyAPI = append(cfg.Pandaproxy.AdvertisedPandaproxyAPI, config.NamedSocketAddress{
 			SocketAddress: config.SocketAddress{
-				Address: fmt.Sprintf("%d.%s", index, c.subdomain),
-				Port:    c.proxyHostPort,
+				Address: address,
+				Port:    port,
 			},
 			Name: "proxy-external",
 		})
@@ -291,6 +324,8 @@ func checkEnvVars() (configuratorConfig, error) {
 	var extCon string
 	var rpcPort string
 	var hostPort string
+	var onp string
+	var ponp string
 
 	c := configuratorConfig{}
 
@@ -334,6 +369,22 @@ func checkEnvVars() (configuratorConfig, error) {
 			value: &hostPort,
 			name:  hostPortEnvVar,
 		},
+		{
+			value: &c.advertisedHostname,
+			name:  advertisedHostnameEnvVar,
+		},
+		{
+			value: &onp,
+			name:  ordinalNodePortsEnvVar,
+		},
+		{
+			value: &c.advertisedProxyHostname,
+			name:  advertisedProxyHostnameEnvVar,
+		},
+		{
+			value: &ponp,
+			name:  proxyOrdinalNodePortsEnvVar,
+		},
 	}
 	for _, envVar := range envVarList {
 		v, exist := os.LookupEnv(envVar.name)
@@ -371,6 +422,16 @@ func checkEnvVars() (configuratorConfig, error) {
 		if err != nil {
 			result = multierror.Append(result, fmt.Errorf("unable to convert proxy host port from string to int: %w", err))
 		}
+	}
+
+	c.ordinalNodePorts, err = strconv.ParseBool(onp)
+	if err != nil {
+		result = multierror.Append(result, fmt.Errorf("unable to parse bool: %w", err))
+	}
+
+	c.proxyOrdinalNodePorts, err = strconv.ParseBool(ponp)
+	if err != nil {
+		result = multierror.Append(result, fmt.Errorf("unable to parse bool: %w", err))
 	}
 
 	return c, result
