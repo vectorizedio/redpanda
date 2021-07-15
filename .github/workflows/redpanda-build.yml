@@ -30,19 +30,12 @@ jobs:
             sudo apt install -y ccache
             sudo ./install-dependencies.sh
 
-        # there is no analog to ${{ github.workspace }} for the home directory
-        - name: prepare cache variables
-          id: prepare_cache_variables
-          run: |
-            echo ::set-output name=home::$HOME
-            echo ::set-output name=timestamp::$(date +'%Y-%m-%d-%H-%M-%S')
-
         - name: ccache cache files
           uses: actions/cache@v2
           with:
-            path: ${{ steps.prepare_cache_variables.outputs.home }}/.ccache
-            key: ccache-${{ steps.prepare_cache_variables.outputs.timestamp }}
-            restore-keys: ccache-
+            path: ~/.ccache
+            key: ccache-${{ github.ref }}
+            restore-keys: ccache
 
         - name: install g++-11
           run: |
@@ -63,6 +56,7 @@ jobs:
             export CCACHE_COMPRESS=true
             export CCACHE_COMPRESSLEVEL=6
             export CCACHE_MAXSIZE=200M
+            export CCACHE_DIR="~/.ccache"
 
             ccache -p # print the config
             ccache -s # print the stats before reusing
