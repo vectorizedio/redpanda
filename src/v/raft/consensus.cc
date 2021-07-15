@@ -281,9 +281,9 @@ consensus::success_reply consensus::update_follower_index(
           _ctxlog.trace,
           "Updated node {} last committed log index: {}",
           idx.node_id,
-          reply.last_committed_log_index);
+          reply.last_flushed_log_index);
         idx.last_dirty_log_index = reply.last_dirty_log_index;
-        idx.last_committed_log_index = reply.last_committed_log_index;
+        idx.last_flushed_log_index = reply.last_flushed_log_index;
         idx.next_index = details::next_offset(idx.last_dirty_log_index);
     }
 
@@ -299,7 +299,7 @@ consensus::success_reply consensus::update_follower_index(
             // update follower state to allow recovery of follower with
             // missing entries
             idx.last_dirty_log_index = reply.last_dirty_log_index;
-            idx.last_committed_log_index = reply.last_committed_log_index;
+            idx.last_flushed_log_index = reply.last_flushed_log_index;
             idx.next_index = details::next_offset(idx.last_dirty_log_index);
             idx.follower_state_change.broadcast();
         }
@@ -342,7 +342,7 @@ void consensus::maybe_promote_to_voter(vnode id) {
         }
 
         // do not promote to voter, learner is not up to date
-        if (it->second.match_index < _log.offsets().committed_offset) {
+        if (it->second.match_index < _flushed_offset) {
             return ss::now();
         }
 
@@ -381,7 +381,7 @@ void consensus::successfull_append_entries_reply(
   follower_index_metadata& idx, append_entries_reply reply) {
     // follower and leader logs matches
     idx.last_dirty_log_index = reply.last_dirty_log_index;
-    idx.last_committed_log_index = reply.last_committed_log_index;
+    idx.last_flushed_log_index = reply.last_flushed_log_index;
     idx.match_index = idx.last_dirty_log_index;
     idx.next_index = details::next_offset(idx.last_dirty_log_index);
     vlog(
@@ -643,20 +643,6 @@ ss::future<result<replicate_result>> consensus::do_append_replicate_relaxed(
           return ret_t(replicate_result{.last_offset = res.last_offset});
       })
       .finally([this, u = std::move(u)] { _probe.replicate_done(); });
-}
-
-void consensus::dispatch_flush_with_lock() {
-    if (!_has_pending_flushes) {
-        return;
-    }
-    (void)ss::with_gate(_bg, [this] {
-        return _op_lock.with([this] {
-            if (!_has_pending_flushes) {
-                return ss::make_ready_future<>();
-            }
-            return flush_log();
-        });
-    });
 }
 
 ss::future<model::record_batch_reader>
@@ -931,6 +917,7 @@ ss::future<> consensus::start() {
                   _term = lstats.dirty_offset_term;
                   _voted_for = {};
               }
+              _flushed_offset = lstats.dirty_offset;
               /**
                * The configuration manager state may be divereged from the log
                * state, as log is flushed lazily, we have to make sure that the
@@ -1299,7 +1286,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     reply.group = r.meta.group;
     reply.term = _term;
     reply.last_dirty_log_index = lstats.dirty_offset;
-    reply.last_committed_log_index = lstats.committed_offset;
+    reply.last_flushed_log_index = _flushed_offset;
     reply.result = append_entries_reply::status::failure;
     _probe.append_request();
 
@@ -1779,21 +1766,34 @@ ss::future<std::error_code> consensus::replicate_configuration(
 
 append_entries_reply consensus::make_append_entries_reply(
   vnode target_node, storage::append_result disk_results) {
-    auto lstats = _log.offsets();
     append_entries_reply reply;
     reply.node_id = _self;
     reply.target_node_id = target_node;
     reply.group = _group;
     reply.term = _term;
     reply.last_dirty_log_index = disk_results.last_offset;
-    reply.last_committed_log_index = lstats.committed_offset;
+    reply.last_flushed_log_index = _flushed_offset;
     reply.result = append_entries_reply::status::success;
     return reply;
 }
 
 ss::future<> consensus::flush_log() {
     _probe.log_flushed();
-    return _log.flush().then([this] { _has_pending_flushes = false; });
+    auto flushed_up_to = _log.offsets().dirty_offset;
+    return _log.flush().then([this, flushed_up_to] {
+        _flushed_offset = flushed_up_to;
+        // TODO: remove this assertion when we will remove committed_offset
+        // from storage.
+        auto lstats = _log.offsets();
+        vassert(
+          lstats.committed_offset >= _flushed_offset,
+          "Raft incorrectly tracking flushed log offset. Expected offset: {}, "
+          " current log offsets: {}, log: {}",
+          _flushed_offset,
+          lstats,
+          _log);
+        _has_pending_flushes = false;
+    });
 }
 
 ss::future<storage::append_result> consensus::disk_append(
@@ -1966,18 +1966,17 @@ consensus::do_maybe_update_leader_commit_idx(ss::semaphore_units<> u) {
     // If there exists an N such that N > commitIndex, a majority
     // of matchIndex[i] ≥ N, and log[N].term == currentTerm:
     // set commitIndex = N (§5.3, §5.4).
-    auto majority_match = config().quorum_match(
-      [this, committed_offset = lstats.committed_offset](vnode id) {
-          // current node - we just return commited offset
-          if (id == _self) {
-              return committed_offset;
-          }
-          if (auto it = _fstats.find(id); it != _fstats.end()) {
-              return it->second.match_committed_index();
-          }
+    auto majority_match = config().quorum_match([this](vnode id) {
+        // current node - we just return commited offset
+        if (id == _self) {
+            return _flushed_offset;
+        }
+        if (auto it = _fstats.find(id); it != _fstats.end()) {
+            return it->second.match_committed_index();
+        }
 
-          return model::offset{};
-      });
+        return model::offset{};
+    });
     /**
      * we have to make sure that we do not advance committed_index beyond the
      * point which is readable in log. Since we are not waiting for flush to
@@ -1989,7 +1988,8 @@ consensus::do_maybe_update_leader_commit_idx(ss::semaphore_units<> u) {
      * batcher aren't readable since some of the writes are still in flight in
      * segment appender.
      */
-    majority_match = std::min(majority_match, lstats.committed_offset);
+    majority_match = std::min(majority_match, _flushed_offset);
+
     if (
       majority_match > _commit_index
       && _log.get_term(majority_match) == _term) {
@@ -2020,14 +2020,12 @@ consensus::do_maybe_update_leader_commit_idx(ss::semaphore_units<> u) {
 }
 ss::future<>
 consensus::maybe_update_follower_commit_idx(model::offset request_commit_idx) {
-    auto lstats = _log.offsets();
     // Raft paper:
     //
     // If leaderCommit > commitIndex, set commitIndex =
     // min(leaderCommit, index of last new entry)
     if (request_commit_idx > _commit_index) {
-        auto new_commit_idx = std::min(
-          request_commit_idx, lstats.committed_offset);
+        auto new_commit_idx = std::min(request_commit_idx, _flushed_offset);
         if (new_commit_idx != _commit_index) {
             _commit_index = new_commit_idx;
             vlog(
@@ -2445,7 +2443,7 @@ std::vector<follower_metrics> consensus::get_follower_metrics() const {
         ret.push_back(follower_metrics{
           .id = f.first.id(),
           .is_learner = f.second.is_learner,
-          .committed_log_index = f.second.last_committed_log_index,
+          .committed_log_index = f.second.last_flushed_log_index,
           .dirty_log_index = f.second.last_dirty_log_index,
           .match_index = f.second.match_index,
           .last_heartbeat = last_hbeat,
