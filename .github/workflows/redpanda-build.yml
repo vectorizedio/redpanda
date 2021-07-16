@@ -12,59 +12,56 @@ on: [push, pull_request]
 
 jobs:
   build:
-    name: Build on ${{ matrix.container }}
+    name: build
     runs-on: ubuntu-20.04
-    container: ${{ matrix.container }}
-    strategy:
-      matrix:
-        container: ['ubuntu:21.04']
 
     steps:
         - name: checkout
           uses: actions/checkout@v2
 
-        - name: update container base
+        - name: freeup space
           run: |
-            export DEBIAN_FRONTEND=noninteractive
-            apt-get update -y
-            apt-get install -y git sudo pkg-config ccache
+            sudo rm -rf /usr/local/lib/android # will release about 10 GB if you don't need Android
+            sudo rm -rf /usr/share/dotnet # will release about 20GB if you don't need .NET
 
         - name: install dependencies
-          run: ./install-dependencies.sh
+          run: |
+            sudo apt update
+            sudo apt install -y ccache
+            sudo ./install-dependencies.sh
+
+        - name: ccache cache files
+          uses: actions/cache@v2
+          with:
+            path: ~/.ccache
+            key: ccache-${{ github.ref }}
+            restore-keys: ccache
 
         - name: install g++-11
           run: |
-            DEBIAN_FRONTEND=noninteractive apt install -y g++-11
+            sudo apt install -y software-properties-common
+            sudo add-apt-repository ppa:ubuntu-toolchain-r/test
+            sudo apt install g++-11
+
             sudo update-alternatives \
               --install /usr/bin/gcc gcc /usr/bin/gcc-11 60 \
               --slave /usr/bin/g++ g++ /usr/bin/g++-11
             sudo update-alternatives --auto gcc
 
-        # there is no analog to ${{ github.workspace }} for the home directory
-        - name: prepare cache variables
-          id: prepare_cache_variables
+        - name: build and test
           run: |
-            echo ::set-output name=home::$HOME
-            echo ::set-output name=timestamp::$(date +'%Y-%m-%d-%H-%M-%S')
-
-        - name: ccache cache files
-          uses: actions/cache@v2
-          with:
-            path: ${{ steps.prepare_cache_variables.outputs.home }}/.ccache
-            key: ${{ matrix.container }}-ccache-${{ steps.prepare_cache_variables.outputs.timestamp }}
-            restore-keys: ${{ matrix.container }}-ccache-
-
-        # at the time of this writing the ccache for a full build is about
-        # 70MB (due to the compression) but it may grow if there are many
-        # commits with changes within 1 branch and thus the 200MB upper limit
-        - name: build & test
-          run: |
+            # at the time of this writing the ccache for a full build is about
+            # 70MB (due to the compression) but it may grow if there are many
+            # commits with changes within 1 branch and thus the 200MB upper limit
             export CCACHE_COMPRESS=true
             export CCACHE_COMPRESSLEVEL=6
             export CCACHE_MAXSIZE=200M
+            export CCACHE_DIR="~/.ccache"
 
             ccache -p # print the config
             ccache -s # print the stats before reusing
             ccache -z # zero the stats
+
             ./build.sh
+
             ccache -s # print the stats after the build
