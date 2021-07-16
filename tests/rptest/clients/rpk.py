@@ -110,6 +110,13 @@ class RpkTool:
         cmd = [self._rpk_binary(), 'wasm', 'generate', directory]
         return self._execute(cmd)
 
+    def wasm_list(self):
+        cmd = [
+            self._rpk_binary(), 'wasm', 'list', '--raw', '--brokers',
+            self._redpanda.brokers()
+        ]
+        return self._execute(cmd)
+
     def _run_topic(self, cmd, stdin=None, timeout=30):
         cmd = [
             self._rpk_binary(), "topic", "--brokers",
@@ -160,7 +167,6 @@ class RpkTool:
                 f.write(stdin)
                 f.seek(0)
 
-            # rpk logs everything on STDERR by default
             p = subprocess.Popen(cmd,
                                  stdout=subprocess.PIPE,
                                  stdin=f,
