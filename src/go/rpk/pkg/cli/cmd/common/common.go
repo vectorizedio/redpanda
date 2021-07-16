@@ -13,6 +13,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 
@@ -187,19 +188,17 @@ func DeduceBrokers(
 		}
 		// Add the seed servers' Kafka addrs.
 		for _, b := range conf.Redpanda.SeedServers {
-			addr := fmt.Sprintf(
-				"%s:%d",
+			addr := net.JoinHostPort(
 				b.Host.Address,
-				b.Host.Port,
+				fmt.Sprint(b.Host.Port),
 			)
 			bs = append(bs, addr)
 		}
 		if len(conf.Redpanda.KafkaApi) > 0 {
 			// Add the current node's 1st Kafka listener.
-			selfAddr := fmt.Sprintf(
-				"%s:%d",
+			selfAddr := net.JoinHostPort(
 				conf.Redpanda.KafkaApi[0].Address,
-				conf.Redpanda.KafkaApi[0].Port,
+				fmt.Sprint(conf.Redpanda.KafkaApi[0].Port),
 			)
 			bs = append(bs, selfAddr)
 		}
