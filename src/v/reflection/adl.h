@@ -13,6 +13,8 @@
 
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
+#include "model/timeout_clock.h"
+#include "model/timestamp.h"
 #include "reflection/for_each_field.h"
 #include "reflection/type_traits.h"
 #include "seastarx.h"
@@ -44,11 +46,15 @@ struct adl {
     static constexpr bool is_ss_bool = is_ss_bool_v<T>;
     static constexpr bool is_chrono_milliseconds
       = std::is_same_v<type, std::chrono::milliseconds>;
+    static constexpr bool is_timestamp = std::is_same_v<type, model::timestamp>;
+    static constexpr bool is_time_point
+      = std::is_same_v<type, ss::lowres_system_clock::time_point>;
 
     static_assert(
       is_optional || is_sstring || is_vector || is_named_type || is_iobuf
         || is_standard_layout || is_trivially_copyable || is_not_floating_point
-        || is_enum || is_ss_bool || is_chrono_milliseconds,
+        || is_enum || is_ss_bool || is_chrono_milliseconds || is_timestamp
+        || is_time_point,
       "rpc: no adl registered");
 
     type from(iobuf io) {
@@ -95,6 +101,13 @@ struct adl {
         } else if constexpr (is_chrono_milliseconds) {
             return std::chrono::milliseconds(
               ss::le_to_cpu(in.template consume_type<int64_t>()));
+        } else if constexpr (is_timestamp) {
+            return model::timestamp(
+              ss::le_to_cpu(in.template consume_type<int64_t>()));
+        } else if constexpr (is_time_point) {
+            return ss::lowres_system_clock::time_point(
+              std::chrono::milliseconds(
+                ss::le_to_cpu(in.template consume_type<int64_t>())));
         } else if constexpr (is_standard_layout) {
             T t;
             reflection::for_each_field(t, [&in](auto& field) mutable {
@@ -148,6 +161,16 @@ struct adl {
             adl<int8_t>{}.to(out, static_cast<int8_t>(bool(t)));
         } else if constexpr (is_chrono_milliseconds) {
             adl<int64_t>{}.to(out, t.count());
+            return;
+        } else if constexpr (is_timestamp) {
+            adl<int64_t>{}.to(out, t.value());
+            return;
+        } else if constexpr (is_time_point) {
+            adl<int64_t>{}.to(
+              out,
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                t.time_since_epoch())
+                .count());
             return;
         } else if constexpr (is_standard_layout) {
             /*
