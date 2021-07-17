@@ -145,9 +145,29 @@ spec:
                             API outside of a Kubernetes cluster. For more information
                             please go to ExternalConnectivityConfig
                           properties:
+                            baseNodePort:
+                              description: BaseNodePort is the bootstrap port as defined
+                                by the user. If omitted a random port would be chosen
+                                by Kubernetes.
+                              type: integer
                             enabled:
                               description: Enabled enables the external connectivity
                                 feature
+                              type: boolean
+                            hostname:
+                              description: "Hostname would assign the same hostname
+                                for all brokers. Combined with OrdinalNodePorts it
+                                would generate\tadvertised listeners as HOSTNAME.DOMAIN_NAME:30001,
+                                HOSTNAME.DOMAIN_NAME:30002 etc. If omitted an increasing\tnumber
+                                per broker would be generated e.g. 0.DOMAIN_NAME:30000,
+                                1.DOMAIN_NAME:30000 etc."
+                              type: string
+                            ordinalNodePorts:
+                              description: OrdinalNodePorts enables generating an
+                                increasing dedicated NodePort per broker, e.g. each
+                                of those NodePorts would have a selector that points
+                                to a single broker. Each broker would use that NodePort
+                                as it's advertized port.
                               type: boolean
                             subdomain:
                               description: Subdomain can be used to change the behavior
@@ -155,6 +175,10 @@ spec:
                                 Kafka API as follows BROKER_ID.SUBDOMAIN:EXTERNAL_KAFKA_API_PORT.
                                 If Subdomain is empty then each broker advertises
                                 Kafka API as PUBLIC_NODE_IP:EXTERNAL_KAFKA_API_PORT.
+                                If Hostname is defined then each broker advertises
+                                Kafka API as HOSTNAME:EXTERNAL_KAFKA_API_PORT. If
+                                OrdinalNodePorts is enabled then each broker advertises
+                                Kafka API as HOSTNAME:(EXTERNAL_KAFKA_API_PORT + brokerID).
                                 If TLS is enabled then this subdomain will be requested
                                 as a subject alternative name.
                               type: string
@@ -189,9 +213,29 @@ spec:
                             outside of a Kubernetes cluster. For more information
                             please go to ExternalConnectivityConfig
                           properties:
+                            baseNodePort:
+                              description: BaseNodePort is the bootstrap port as defined
+                                by the user. If omitted a random port would be chosen
+                                by Kubernetes.
+                              type: integer
                             enabled:
                               description: Enabled enables the external connectivity
                                 feature
+                              type: boolean
+                            hostname:
+                              description: "Hostname would assign the same hostname
+                                for all brokers. Combined with OrdinalNodePorts it
+                                would generate\tadvertised listeners as HOSTNAME.DOMAIN_NAME:30001,
+                                HOSTNAME.DOMAIN_NAME:30002 etc. If omitted an increasing\tnumber
+                                per broker would be generated e.g. 0.DOMAIN_NAME:30000,
+                                1.DOMAIN_NAME:30000 etc."
+                              type: string
+                            ordinalNodePorts:
+                              description: OrdinalNodePorts enables generating an
+                                increasing dedicated NodePort per broker, e.g. each
+                                of those NodePorts would have a selector that points
+                                to a single broker. Each broker would use that NodePort
+                                as it's advertized port.
                               type: boolean
                             subdomain:
                               description: Subdomain can be used to change the behavior
@@ -199,6 +243,10 @@ spec:
                                 Kafka API as follows BROKER_ID.SUBDOMAIN:EXTERNAL_KAFKA_API_PORT.
                                 If Subdomain is empty then each broker advertises
                                 Kafka API as PUBLIC_NODE_IP:EXTERNAL_KAFKA_API_PORT.
+                                If Hostname is defined then each broker advertises
+                                Kafka API as HOSTNAME:EXTERNAL_KAFKA_API_PORT. If
+                                OrdinalNodePorts is enabled then each broker advertises
+                                Kafka API as HOSTNAME:(EXTERNAL_KAFKA_API_PORT + brokerID).
                                 If TLS is enabled then this subdomain will be requested
                                 as a subject alternative name.
                               type: string
@@ -296,9 +344,29 @@ spec:
                             outside of a Kubernetes cluster. For more information
                             please go to ExternalConnectivityConfig
                           properties:
+                            baseNodePort:
+                              description: BaseNodePort is the bootstrap port as defined
+                                by the user. If omitted a random port would be chosen
+                                by Kubernetes.
+                              type: integer
                             enabled:
                               description: Enabled enables the external connectivity
                                 feature
+                              type: boolean
+                            hostname:
+                              description: "Hostname would assign the same hostname
+                                for all brokers. Combined with OrdinalNodePorts it
+                                would generate\tadvertised listeners as HOSTNAME.DOMAIN_NAME:30001,
+                                HOSTNAME.DOMAIN_NAME:30002 etc. If omitted an increasing\tnumber
+                                per broker would be generated e.g. 0.DOMAIN_NAME:30000,
+                                1.DOMAIN_NAME:30000 etc."
+                              type: string
+                            ordinalNodePorts:
+                              description: OrdinalNodePorts enables generating an
+                                increasing dedicated NodePort per broker, e.g. each
+                                of those NodePorts would have a selector that points
+                                to a single broker. Each broker would use that NodePort
+                                as it's advertized port.
                               type: boolean
                             subdomain:
                               description: Subdomain can be used to change the behavior
@@ -306,6 +374,10 @@ spec:
                                 Kafka API as follows BROKER_ID.SUBDOMAIN:EXTERNAL_KAFKA_API_PORT.
                                 If Subdomain is empty then each broker advertises
                                 Kafka API as PUBLIC_NODE_IP:EXTERNAL_KAFKA_API_PORT.
+                                If Hostname is defined then each broker advertises
+                                Kafka API as HOSTNAME:EXTERNAL_KAFKA_API_PORT. If
+                                OrdinalNodePorts is enabled then each broker advertises
+                                Kafka API as HOSTNAME:(EXTERNAL_KAFKA_API_PORT + brokerID).
                                 If TLS is enabled then this subdomain will be requested
                                 as a subject alternative name.
                               type: string
