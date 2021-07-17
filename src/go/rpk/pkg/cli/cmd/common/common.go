@@ -211,6 +211,52 @@ func DeduceBrokers(
 	}
 }
 
+func DeduceAdminApiAddrs(
+	configuration func() (*config.Config, error), addresses *[]string,
+) []string {
+	defaultAddr := "127.0.0.1:33145"
+	defaultAddrs := []string{defaultAddr}
+	as := *addresses
+	// Prioritize brokers passed through --brokers
+	if len(as) != 0 {
+		log.Debugf("Using Admin API addresses: %s", strings.Join(as, ", "))
+		return as
+	}
+	// If no values were passed directly, look for the env vars.
+	envVar := "REDPANDA_API_ADMIN_ADDRS"
+	envAddrs := os.Getenv(envVar)
+	if envAddrs != "" {
+		log.Debugf("Using %s: %s", envVar, envAddrs)
+		return strings.Split(envAddrs, ",")
+	}
+
+	// Otherwise, try to find an existing config file.
+	conf, err := configuration()
+	if err != nil {
+		log.Debugf(
+			"Couldn't read the config file."+
+				" Assuming Admin API address %s.", defaultAddr,
+		)
+		log.Debug(err)
+		return defaultAddrs
+	}
+
+	if len(conf.Rpk.AdminApi.Addresses) == 0 {
+		log.Debugf(
+			"Empty rpk.admin_api.addresses. Assuming %s.", defaultAddr,
+		)
+		return defaultAddrs
+	}
+
+	// TODO: get redpanda.admin_api if rpk.admin_api.addresses is empty
+
+	log.Debugf(
+		"Using Admin API addresses from config: %s",
+		strings.Join(conf.Rpk.AdminApi.Addresses, ", "),
+	)
+	return conf.Rpk.KafkaApi.Brokers
+}
+
 func CreateProducer(
 	brokers func() []string,
 	configuration func() (*config.Config, error),
